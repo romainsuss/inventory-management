@@ -75,6 +75,49 @@
         </div>
       </div>
     </div>
+
+    <div class="card">
+      <div class="card-header">
+        <h3 class="card-title">{{ t('orders.submittedOrders.title') }} ({{ submittedOrders.length }})</h3>
+      </div>
+      <div v-if="submittedLoading" class="loading">{{ t('common.loading') }}</div>
+      <div v-else-if="submittedError" class="error">{{ submittedError }}</div>
+      <div v-else-if="submittedOrders.length === 0" class="submitted-empty">
+        {{ t('orders.submittedOrders.empty') }}
+      </div>
+      <div v-else class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th>{{ t('orders.submittedOrders.table.orderNumber') }}</th>
+              <th>{{ t('orders.submittedOrders.table.submitted') }}</th>
+              <th>{{ t('orders.submittedOrders.table.items') }}</th>
+              <th>{{ t('orders.submittedOrders.table.totalCost') }}</th>
+              <th>{{ t('orders.submittedOrders.table.leadTime') }}</th>
+              <th>{{ t('orders.submittedOrders.table.expectedDelivery') }}</th>
+              <th>{{ t('orders.submittedOrders.table.status') }}</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="order in submittedOrders" :key="order.id">
+              <td><strong>{{ order.order_number }}</strong></td>
+              <td>{{ formatSubmittedDate(order.submitted_date) }}</td>
+              <td>
+                <div v-for="item in order.items" :key="item.sku" class="submitted-item">
+                  {{ translateProductName(item.name) }} x {{ item.quantity }}
+                </div>
+              </td>
+              <td><strong>{{ formatCurrency(order.total_cost, currentCurrency) }}</strong></td>
+              <td>{{ t('orders.submittedOrders.leadTimeDays', { count: order.lead_time_days }) }}</td>
+              <td>{{ formatSubmittedDate(order.expected_delivery) }}</td>
+              <td>
+                <span class="badge info">{{ translateSubmittedStatus(order.status) }}</span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -83,6 +126,7 @@ import { ref, onMounted, watch, computed } from 'vue'
 import { api } from '../api'
 import { useFilters } from '../composables/useFilters'
 import { useI18n } from '../composables/useI18n'
+import { formatCurrency } from '../utils/currency'
 
 export default {
   name: 'Orders',
@@ -153,9 +197,50 @@ export default {
       })
     }
 
+    // Submitted restock orders (independent of the global filters)
+    const submittedOrders = ref([])
+    const submittedLoading = ref(true)
+    const submittedError = ref(null)
+
+    const loadSubmittedOrders = async () => {
+      try {
+        submittedLoading.value = true
+        submittedError.value = null
+        const data = await api.getRestockOrders()
+        submittedOrders.value = Array.isArray(data) ? data : []
+      } catch (err) {
+        console.error('Failed to load submitted orders:', err)
+        submittedError.value = t('orders.submittedOrders.error')
+      } finally {
+        submittedLoading.value = false
+      }
+    }
+
+    const formatSubmittedDate = (dateString) => {
+      if (!dateString) return ''
+      // Date-only strings are parsed as local time to avoid a one-day shift
+      const date = new Date(/^\d{4}-\d{2}-\d{2}$/.test(dateString) ? `${dateString}T00:00:00` : dateString)
+      if (isNaN(date.getTime())) return dateString
+      return formatDate(date)
+    }
+
+    const translateSubmittedStatus = (status) => {
+      const key = `status.${String(status).toLowerCase()}`
+      const label = t(key)
+      return label === key ? status : label
+    }
+
     onMounted(loadOrders)
+    onMounted(loadSubmittedOrders)
 
     return {
+      submittedOrders,
+      submittedLoading,
+      submittedError,
+      formatSubmittedDate,
+      translateSubmittedStatus,
+      formatCurrency,
+      currentCurrency,
       t,
       loading,
       error,
@@ -275,5 +360,17 @@ export default {
 .item-meta {
   font-size: 0.813rem;
   color: #64748b;
+}
+
+.submitted-item {
+  font-size: 0.813rem;
+  color: #334155;
+}
+
+.submitted-empty {
+  text-align: center;
+  padding: 2rem;
+  color: #64748b;
+  font-size: 0.938rem;
 }
 </style>
